@@ -8,6 +8,7 @@ import ru.aston.hometask.userservice.dto.UserDto;
 import ru.aston.hometask.userservice.exception.BadRequestException;
 import ru.aston.hometask.userservice.exception.ResourceNotFoundException;
 import ru.aston.hometask.userservice.model.User;
+import ru.aston.hometask.userservice.producer.UserEventProducerService;
 import ru.aston.hometask.userservice.service.UserService;
 
 import java.util.List;
@@ -26,24 +27,25 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private UserEventProducerService userEventProducer;
+
     @Override
-    @Transactional
     public UserDto create(UserDto dto) {
         if (userRepository.findByEmail(dto.email()).isPresent()) {
             throw new BadRequestException(String.format(EMAIL_DUPLICATE_MSG, dto.email()));
         }
-        User user = toUserEntity(dto);
-        return toUserDto(userRepository.save(user));
+        User savedUser = userRepository.save(toUserEntity(dto));
+        userEventProducer.sendUserCreated(savedUser.getEmail());
+        return toUserDto(savedUser);
     }
 
     @Override
-    @Transactional(readOnly = true)
     public List<UserDto> getAll() {
         return toListUserDto(userRepository.findAll());
     }
 
     @Override
-    @Transactional(readOnly = true)
     public UserDto getById(UUID id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, id)));
@@ -51,7 +53,6 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
     public UserDto update(UUID id, UserDto dto) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, id)));
@@ -68,11 +69,10 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @Transactional
     public void delete(UUID id) {
-        if (!userRepository.existsById(id)) {
-            throw new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, id));
-        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, id)));
         userRepository.deleteById(id);
+        userEventProducer.sendUserDeleted(user.getEmail());
     }
 }
