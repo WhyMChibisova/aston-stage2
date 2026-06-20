@@ -11,6 +11,7 @@ import ru.aston.hometask.userservice.dto.UserDto;
 import ru.aston.hometask.userservice.exception.BadRequestException;
 import ru.aston.hometask.userservice.exception.ResourceNotFoundException;
 import ru.aston.hometask.userservice.model.User;
+import ru.aston.hometask.userservice.producer.UserEventProducerService;
 import ru.aston.hometask.userservice.service.impl.UserServiceImpl;
 
 import java.util.List;
@@ -34,6 +35,8 @@ class UserServiceTest {
 
     @Mock
     private UserRepository userRepository;
+    @Mock
+    private UserEventProducerService producerService;
 
     @InjectMocks
     private UserServiceImpl userService;
@@ -214,7 +217,7 @@ class UserServiceTest {
 
     @Test
     void deleteUser_whenUserExists() {
-        when(userRepository.existsById(userId)).thenReturn(true);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
         doNothing().when(userRepository).deleteById(userId);
 
         userService.delete(userId);
@@ -224,7 +227,7 @@ class UserServiceTest {
 
     @Test
     void deleteUser_whenIdIsInvalid_thenThrowException() {
-        when(userRepository.existsById(userId)).thenReturn(false);
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class,
                 () -> userService.delete(userId));
