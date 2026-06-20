@@ -16,7 +16,7 @@ import java.util.Map;
 
 @Configuration
 public class KafkaProducerConfig {
-    @Value("${spring.kafka.bootstrap-servers}")
+    @Value("${spring.kafka.bootstrap-servers:${SPRING_KAFKA_BOOTSTRAP_SERVERS:localhost:9092}}")
     private String bootstrapServers;
 
     @Bean
@@ -30,6 +30,7 @@ public class KafkaProducerConfig {
         return new DefaultKafkaProducerFactory<>(props);
     }
 
+    @Bean
     public KafkaTemplate<String, UserEventDto> kafkaTemplate(ProducerFactory<String, UserEventDto> producerFactory) {
         return new KafkaTemplate<>(producerFactory);
     }
