@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Builder;
 
 @Builder
-public record UserDto(
+public record UserRequest(
         @NotBlank(message = "Name can't be blank")
         @Size(max = 100, message = "Name can't contain more than 100 characters")
         String name,

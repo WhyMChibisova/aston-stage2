@@ -1,6 +1,7 @@
 package ru.aston.hometask.userservice.mapper;
 
-import ru.aston.hometask.userservice.dto.UserDto;
+import ru.aston.hometask.userservice.dto.UserRequest;
+import ru.aston.hometask.userservice.dto.UserResponse;
 import ru.aston.hometask.userservice.model.User;
 
 import java.util.Collections;
@@ -8,28 +9,29 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 public class UserMapper {
-    public static User toUserEntity(UserDto dto) {
+    public static User toUserEntity(UserRequest request) {
         return User.builder()
-                .name(dto.name())
-                .email(dto.email())
-                .age(dto.age())
+                .name(request.name())
+                .email(request.email())
+                .age(request.age())
                 .build();
     }
 
-    public static UserDto toUserDto(User user) {
-        return UserDto.builder()
+    public static UserResponse toUserResponse(User user) {
+        return UserResponse.builder()
+                .id(user.getId())
                 .name(user.getName())
                 .email(user.getEmail())
                 .age(user.getAge())
                 .build();
     }
 
-    public static List<UserDto> toListUserDto(List<User> users) {
+    public static List<UserResponse> toListUserResponse(List<User> users) {
         if (users == null) {
             return Collections.emptyList();
         }
         return users.stream()
-                .map(UserMapper::toUserDto)
+                .map(UserMapper::toUserResponse)
                 .collect(Collectors.toList());
     }
 }
