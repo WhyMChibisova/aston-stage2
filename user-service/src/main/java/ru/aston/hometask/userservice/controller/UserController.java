@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.hateoas.CollectionModel;
+import org.springframework.hateoas.EntityModel;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,12 +20,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import ru.aston.hometask.userservice.assembler.UserModelAssembler;
 import ru.aston.hometask.userservice.dto.ExceptionResponse;
 import ru.aston.hometask.userservice.dto.UserRequest;
 import ru.aston.hometask.userservice.dto.UserResponse;
 import ru.aston.hometask.userservice.service.UserService;
 
-import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "User management", description = "APIs for managing users")
@@ -45,6 +47,9 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private UserModelAssembler assembler;
+
     @Operation(summary = "Create new user")
     @ApiResponses(value = {
             @ApiResponse(
@@ -56,8 +61,8 @@ public class UserController {
     })
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping
-    public UserResponse create(@Valid @RequestBody UserRequest request) {
-        return userService.create(request);
+    public EntityModel<UserResponse> create(@Valid @RequestBody UserRequest request) {
+        return assembler.toModel(userService.create(request));
     }
 
     @Operation(summary = "Get all users")
@@ -65,8 +70,8 @@ public class UserController {
             responseCode = OK_CODE, description = USER_FOUND_MSG,
             content = @Content(schema = @Schema(implementation = UserResponse.class)))
     @GetMapping
-    public List<UserResponse> getAll() {
-        return userService.getAll();
+    public CollectionModel<EntityModel<UserResponse>> getAll() {
+        return assembler.toCollectionModel(userService.getAll());
     }
 
     @Operation(summary = "Get user by id")
@@ -79,8 +84,8 @@ public class UserController {
                     content = @Content(schema = @Schema(implementation = ExceptionResponse.class)))
     })
     @GetMapping("/{id}")
-    public UserResponse getById(@PathVariable UUID id) {
-        return userService.getById(id);
+    public EntityModel<UserResponse> getById(@PathVariable UUID id) {
+        return assembler.toModel(userService.getById(id));
     }
 
     @Operation(summary = "Update user")
@@ -96,8 +101,8 @@ public class UserController {
                     content = @Content(schema = @Schema(implementation = ExceptionResponse.class)))
     })
     @PutMapping("/{id}")
-    public UserResponse update(@PathVariable UUID id, @Valid @RequestBody UserRequest request) {
-        return userService.update(id, request);
+    public EntityModel<UserResponse> update(@PathVariable UUID id, @Valid @RequestBody UserRequest request) {
+        return assembler.toModel(userService.update(id, request));
     }
 
     @Operation(summary = "Delete user")

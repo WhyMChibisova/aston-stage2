@@ -12,9 +12,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import ru.aston.hometask.userservice.assembler.UserModelAssembler;
 import ru.aston.hometask.userservice.dto.UserRequest;
 import ru.aston.hometask.userservice.dto.UserResponse;
 import ru.aston.hometask.userservice.exception.BadRequestException;
@@ -27,6 +29,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -43,10 +46,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @ExtendWith(MockitoExtension.class)
 @WebMvcTest(UserController.class)
+@Import(UserModelAssembler.class)
 class UserControllerTest {
     private static final String END_POINT = "/api/users";
     private static final String USER_NOT_FOUND_MSG = "User not found: %s";
     private static final String EMAIL_DUPLICATE_MSG = "User email already exists: %s";
+    private static final String EMBEDDED_RELATION = "users";
 
     @Autowired
     private MockMvc mockMvc;
@@ -92,7 +97,11 @@ class UserControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.all-users.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.update.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.delete.href", endsWith(END_POINT + "/" + userId)));
     }
 
     @Test
@@ -216,16 +225,21 @@ class UserControllerTest {
         when(userService.getAll())
                 .thenReturn(users);
 
+        String embedded = "$._embedded." + EMBEDDED_RELATION;
+
         mockMvc.perform(get(END_POINT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].name").value("Masha"))
-                .andExpect(jsonPath("$[0].email").value("test@test.com"))
-                .andExpect(jsonPath("$[0].age").value(23))
-                .andExpect(jsonPath("$[1].name").value("Dima"))
-                .andExpect(jsonPath("$[1].email").value("test2@test.com"))
-                .andExpect(jsonPath("$[1].age").value(22));
+                .andExpect(jsonPath(embedded).isArray())
+                .andExpect(jsonPath(embedded + ".length()").value(2))
+                .andExpect(jsonPath(embedded + "[0].name").value("Masha"))
+                .andExpect(jsonPath(embedded + "[0].email").value("test@test.com"))
+                .andExpect(jsonPath(embedded + "[0].age").value(23))
+                .andExpect(jsonPath(embedded + "[0]._links.self.href", endsWith(END_POINT + "/" + userResponse.id())))
+                .andExpect(jsonPath(embedded + "[1].name").value("Dima"))
+                .andExpect(jsonPath(embedded + "[1].email").value("test2@test.com"))
+                .andExpect(jsonPath(embedded + "[1].age").value(22))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.create.href", endsWith(END_POINT)));
     }
 
     @Test
@@ -235,7 +249,9 @@ class UserControllerTest {
 
         mockMvc.perform(get(END_POINT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(jsonPath("$._embedded").doesNotExist())
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.create.href", endsWith(END_POINT)));
     }
 
     @Test
@@ -247,7 +263,9 @@ class UserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.all-users.href", endsWith(END_POINT)));
     }
 
     @Test
@@ -271,7 +289,9 @@ class UserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.delete.href", endsWith(END_POINT + "/" + userId)));
     }
 
     @Test
