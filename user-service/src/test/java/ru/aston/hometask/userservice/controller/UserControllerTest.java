@@ -12,10 +12,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import ru.aston.hometask.userservice.dto.UserDto;
+import ru.aston.hometask.userservice.assembler.UserModelAssembler;
+import ru.aston.hometask.userservice.dto.UserRequest;
+import ru.aston.hometask.userservice.dto.UserResponse;
 import ru.aston.hometask.userservice.exception.BadRequestException;
 import ru.aston.hometask.userservice.exception.ResourceNotFoundException;
 import ru.aston.hometask.userservice.service.UserService;
@@ -26,6 +29,7 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.endsWith;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
@@ -34,18 +38,20 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 @WebMvcTest(UserController.class)
+@Import(UserModelAssembler.class)
 class UserControllerTest {
     private static final String END_POINT = "/api/users";
     private static final String USER_NOT_FOUND_MSG = "User not found: %s";
     private static final String EMAIL_DUPLICATE_MSG = "User email already exists: %s";
+    private static final String EMBEDDED_RELATION = "users";
 
     @Autowired
     private MockMvc mockMvc;
@@ -56,49 +62,63 @@ class UserControllerTest {
     @MockitoBean
     private UserService userService;
 
-    private UserDto userDTO;
+    private UserRequest userRequest;
+
+    private UserResponse userResponse;
+
     private UUID userId;
 
     @BeforeEach
     void setUp() {
-        userDTO = UserDto.builder()
+        userId = UUID.randomUUID();
+
+        userRequest = UserRequest.builder()
                 .name("Masha")
                 .email("test@test.com")
                 .age(23)
                 .build();
 
-        userId = UUID.randomUUID();
+        userResponse = UserResponse.builder()
+                .id(userId)
+                .name("Masha")
+                .email("test@test.com")
+                .age(23)
+                .build();
     }
 
     @Test
     void create_whenDataIsValid() throws Exception {
-        when(userService.create(any(UserDto.class)))
-                .thenReturn(userDTO);
+        when(userService.create(any(UserRequest.class)))
+                .thenReturn(userResponse);
 
         mockMvc.perform(post(END_POINT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(userDTO)))
+                        .content(mapper.writeValueAsString(userRequest)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.all-users.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.update.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.delete.href", endsWith(END_POINT + "/" + userId)));
     }
 
     @Test
     void create_whenSameEmailExists_thanBadRequest() throws Exception {
-        when(userService.create(any(UserDto.class)))
+        when(userService.create(any(UserRequest.class)))
                 .thenThrow(new BadRequestException(String.format(EMAIL_DUPLICATE_MSG, "test@test.com")));
 
         mockMvc.perform(post(END_POINT)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(userDTO)))
+                        .content(mapper.writeValueAsString(userRequest)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("email already exists")));
     }
 
     @Test
     void create_whenDataInvalid_thanValidationErrors() throws Exception {
-        UserDto invalidUser = UserDto.builder()
+        UserRequest invalidUser = UserRequest.builder()
                 .name("")
                 .email("email")
                 .age(-1)
@@ -119,7 +139,7 @@ class UserControllerTest {
     @ParameterizedTest
     @MethodSource("invalidSizeNameAndEmail")
     void create_whenInvalidSizeNameAndEmail_thanValidationErrors(String name, String email, String errorField) throws Exception {
-        UserDto invalidUser = UserDto.builder()
+        UserRequest invalidUser = UserRequest.builder()
                 .name(name)
                 .email(email)
                 .age(23)
@@ -141,9 +161,9 @@ class UserControllerTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = { " ", "   " })
+    @ValueSource(strings = {" ", "   "})
     void create_whenNameInvalid_thanValidationErrors(String name) throws Exception {
-        UserDto invalidUser = UserDto.builder()
+        UserRequest invalidUser = UserRequest.builder()
                 .name(name)
                 .email("test@test.com")
                 .age(23)
@@ -158,9 +178,9 @@ class UserControllerTest {
 
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = { " ", "   ", "test", "test@", "@test", "@test.com" })
+    @ValueSource(strings = {" ", "   ", "test", "test@", "@test", "@test.com"})
     void create_whenEmailInvalid_thanValidationErrors(String email) throws Exception {
-        UserDto invalidUser = UserDto.builder()
+        UserRequest invalidUser = UserRequest.builder()
                 .name("Masha")
                 .email(email)
                 .age(23)
@@ -175,9 +195,9 @@ class UserControllerTest {
 
     @ParameterizedTest
     @NullSource
-    @ValueSource(ints = { -1, 151 })
+    @ValueSource(ints = {-1, 151})
     void create_whenAgeInvalid_thanValidationErrors(Integer age) throws Exception {
-        UserDto invalidUser = UserDto.builder()
+        UserRequest invalidUser = UserRequest.builder()
                 .name("Masha")
                 .email("test@test.com")
                 .age(age)
@@ -192,9 +212,10 @@ class UserControllerTest {
 
     @Test
     void getAll_whenUsersExist() throws Exception {
-        List<UserDto> users = List.of(
-                userDTO,
-                UserDto.builder()
+        List<UserResponse> users = List.of(
+                userResponse,
+                UserResponse.builder()
+                        .id(UUID.randomUUID())
                         .name("Dima")
                         .email("test2@test.com")
                         .age(22)
@@ -204,16 +225,21 @@ class UserControllerTest {
         when(userService.getAll())
                 .thenReturn(users);
 
+        String embedded = "$._embedded." + EMBEDDED_RELATION;
+
         mockMvc.perform(get(END_POINT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$.length()").value(2))
-                .andExpect(jsonPath("$[0].name").value("Masha"))
-                .andExpect(jsonPath("$[0].email").value("test@test.com"))
-                .andExpect(jsonPath("$[0].age").value(23))
-                .andExpect(jsonPath("$[1].name").value("Dima"))
-                .andExpect(jsonPath("$[1].email").value("test2@test.com"))
-                .andExpect(jsonPath("$[1].age").value(22));
+                .andExpect(jsonPath(embedded).isArray())
+                .andExpect(jsonPath(embedded + ".length()").value(2))
+                .andExpect(jsonPath(embedded + "[0].name").value("Masha"))
+                .andExpect(jsonPath(embedded + "[0].email").value("test@test.com"))
+                .andExpect(jsonPath(embedded + "[0].age").value(23))
+                .andExpect(jsonPath(embedded + "[0]._links.self.href", endsWith(END_POINT + "/" + userResponse.id())))
+                .andExpect(jsonPath(embedded + "[1].name").value("Dima"))
+                .andExpect(jsonPath(embedded + "[1].email").value("test2@test.com"))
+                .andExpect(jsonPath(embedded + "[1].age").value(22))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.create.href", endsWith(END_POINT)));
     }
 
     @Test
@@ -223,19 +249,23 @@ class UserControllerTest {
 
         mockMvc.perform(get(END_POINT))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isEmpty());
+                .andExpect(jsonPath("$._embedded").doesNotExist())
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT)))
+                .andExpect(jsonPath("$._links.create.href", endsWith(END_POINT)));
     }
 
     @Test
     void getById_whenUserExists() throws Exception {
         when(userService.getById(userId))
-                .thenReturn(userDTO);
+                .thenReturn(userResponse);
 
         mockMvc.perform(get(END_POINT + "/{id}", userId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.all-users.href", endsWith(END_POINT)));
     }
 
     @Test
@@ -250,38 +280,40 @@ class UserControllerTest {
 
     @Test
     void update_whenUserIsValid() throws Exception {
-        when(userService.update(eq(userId), any(UserDto.class)))
-                .thenReturn(userDTO);
+        when(userService.update(eq(userId), any(UserRequest.class)))
+                .thenReturn(userResponse);
 
         mockMvc.perform(put(END_POINT + "/{id}", userId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(userDTO)))
+                        .content(mapper.writeValueAsString(userRequest)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Masha"))
                 .andExpect(jsonPath("$.email").value("test@test.com"))
-                .andExpect(jsonPath("$.age").value(23));
+                .andExpect(jsonPath("$.age").value(23))
+                .andExpect(jsonPath("$._links.self.href", endsWith(END_POINT + "/" + userId)))
+                .andExpect(jsonPath("$._links.delete.href", endsWith(END_POINT + "/" + userId)));
     }
 
     @Test
     void update_whenSameEmailExists_thanBadRequest() throws Exception {
-        when(userService.update(eq(userId), any(UserDto.class)))
+        when(userService.update(eq(userId), any(UserRequest.class)))
                 .thenThrow(new BadRequestException(String.format(EMAIL_DUPLICATE_MSG, "test@test.com")));
 
         mockMvc.perform(put(END_POINT + "/{id}", userId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(userDTO)))
+                        .content(mapper.writeValueAsString(userRequest)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(containsString("email already exists")));
     }
 
     @Test
     void update_whenUserNonExists_thanReturn404() throws Exception {
-        when(userService.update(eq(userId), any(UserDto.class)))
+        when(userService.update(eq(userId), any(UserRequest.class)))
                 .thenThrow(new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, userId)));
 
         mockMvc.perform(put(END_POINT + "/{id}", userId)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(userDTO)))
+                        .content(mapper.writeValueAsString(userRequest)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value(containsString("User not found")));
     }

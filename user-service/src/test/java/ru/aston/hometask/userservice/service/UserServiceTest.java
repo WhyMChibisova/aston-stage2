@@ -7,7 +7,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import ru.aston.hometask.userservice.dao.UserRepository;
-import ru.aston.hometask.userservice.dto.UserDto;
+import ru.aston.hometask.userservice.dto.UserRequest;
+import ru.aston.hometask.userservice.dto.UserResponse;
 import ru.aston.hometask.userservice.exception.BadRequestException;
 import ru.aston.hometask.userservice.exception.ResourceNotFoundException;
 import ru.aston.hometask.userservice.model.User;
@@ -42,7 +43,11 @@ class UserServiceTest {
     private UserServiceImpl userService;
 
     private User testUser;
-    private UserDto userDTO;
+
+    private UserRequest userRequest;
+
+    private UserResponse userResponse;
+
     private UUID userId;
 
     @BeforeEach
@@ -56,7 +61,14 @@ class UserServiceTest {
                 .age(23)
                 .build();
 
-        userDTO = UserDto.builder()
+        userRequest = UserRequest.builder()
+                .name("Masha")
+                .email("test@test.com")
+                .age(23)
+                .build();
+
+        userResponse = UserResponse.builder()
+                .id(userId)
                 .name("Masha")
                 .email("test@test.com")
                 .age(23)
@@ -68,10 +80,10 @@ class UserServiceTest {
         when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenReturn(testUser);
 
-        UserDto savedUser = userService.create(userDTO);
+        UserResponse savedUser = userService.create(userRequest);
 
         assertNotNull(savedUser);
-        assertEquals(userDTO, savedUser);
+        assertEquals(userResponse, savedUser);
 
         verify(userRepository, times(1)).findByEmail("test@test.com");
         verify(userRepository, times(1)).save(any(User.class));
@@ -82,8 +94,8 @@ class UserServiceTest {
         when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(testUser));
 
         BadRequestException exception = assertThrows(BadRequestException.class,
-                () -> userService.create(userDTO));
-        assertEquals(String.format(EMAIL_DUPLICATE_MSG, userDTO.email()), exception.getMessage());
+                () -> userService.create(userRequest));
+        assertEquals(String.format(EMAIL_DUPLICATE_MSG, userRequest.email()), exception.getMessage());
 
         verify(userRepository, times(1)).findByEmail("test@test.com");
         verify(userRepository, never()).save(any(User.class));
@@ -93,10 +105,10 @@ class UserServiceTest {
     void findUserById_whenUserExists_thenReturnUser() {
         when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
 
-        UserDto foundUser = userService.getById(userId);
+        UserResponse foundUser = userService.getById(userId);
 
         assertNotNull(foundUser);
-        assertEquals(userDTO, foundUser);
+        assertEquals(userResponse, foundUser);
 
         verify(userRepository, times(1)).findById(userId);
     }
@@ -118,10 +130,10 @@ class UserServiceTest {
         );
         when(userRepository.findAll()).thenReturn(users);
 
-        List<UserDto> actualUsers = userService.getAll();
+        List<UserResponse> actualUsers = userService.getAll();
 
         assertEquals(2, actualUsers.size());
-        assertEquals(userDTO, actualUsers.get(0));
+        assertEquals(userResponse, actualUsers.get(0));
 
         verify(userRepository, times(1)).findAll();
     }
@@ -130,7 +142,7 @@ class UserServiceTest {
     void findAllUsers_whenUsersNotExist() {
         when(userRepository.findAll()).thenReturn(List.of());
 
-        List<UserDto> actualUsers = userService.getAll();
+        List<UserResponse> actualUsers = userService.getAll();
 
         assertEquals(0, actualUsers.size());
 
@@ -145,7 +157,13 @@ class UserServiceTest {
                 .email("test2@test.com")
                 .age(23)
                 .build();
-        UserDto updatedUserDto = UserDto.builder()
+        UserRequest updatedUserRequest = UserRequest.builder()
+                .name("Masha2")
+                .email("test2@test.com")
+                .age(23)
+                .build();
+        UserResponse updatedUserResponse = UserResponse.builder()
+                .id(userId)
                 .name("Masha2")
                 .email("test2@test.com")
                 .age(23)
@@ -155,9 +173,9 @@ class UserServiceTest {
         when(userRepository.findByEmail("test2@test.com")).thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenReturn(updatedUser);
 
-        UserDto actualUser = userService.update(userId, updatedUserDto);
+        UserResponse actualUser = userService.update(userId, updatedUserRequest);
 
-        assertEquals(updatedUserDto, actualUser);
+        assertEquals(updatedUserResponse, actualUser);
 
         verify(userRepository, times(1)).findById(userId);
         verify(userRepository, times(1)).findByEmail("test2@test.com");
@@ -170,7 +188,7 @@ class UserServiceTest {
         when(userRepository.findByEmail("test@test.com")).thenReturn(Optional.of(testUser));
         when(userRepository.save(any(User.class))).thenReturn(testUser);
 
-        userService.update(userId, userDTO);
+        userService.update(userId, userRequest);
 
         verify(userRepository, times(1)).findById(userId);
         verify(userRepository, times(1)).findByEmail("test@test.com");
@@ -185,7 +203,7 @@ class UserServiceTest {
                 .email("test2@test.com")
                 .age(23)
                 .build();
-        UserDto updatedUserDto = UserDto.builder()
+        UserRequest updatedUserRequest = UserRequest.builder()
                 .name("Masha2")
                 .email("test2@test.com")
                 .age(23)
@@ -194,8 +212,8 @@ class UserServiceTest {
         when(userRepository.findByEmail("test2@test.com")).thenReturn(Optional.of(anotherUser));
 
         BadRequestException exception = assertThrows(BadRequestException.class,
-                () -> userService.update(userId, updatedUserDto));
-        assertEquals(String.format(EMAIL_DUPLICATE_MSG, updatedUserDto.email()), exception.getMessage());
+                () -> userService.update(userId, updatedUserRequest));
+        assertEquals(String.format(EMAIL_DUPLICATE_MSG, updatedUserRequest.email()), exception.getMessage());
 
         verify(userRepository, times(1)).findById(userId);
         verify(userRepository, times(1)).findByEmail("test2@test.com");
@@ -207,7 +225,7 @@ class UserServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
         ResourceNotFoundException exception = assertThrows(ResourceNotFoundException.class,
-                () -> userService.update(userId, userDTO));
+                () -> userService.update(userId, userRequest));
         assertEquals(String.format(USER_NOT_FOUND_MSG, userId), exception.getMessage());
 
         verify(userRepository, times(1)).findById(userId);
