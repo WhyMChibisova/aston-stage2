@@ -4,6 +4,9 @@ WORKDIR /app
 COPY pom.xml .
 COPY user-service/pom.xml user-service/pom.xml
 COPY notification-service/pom.xml notification-service/pom.xml
+COPY eureka-server/pom.xml eureka-server/pom.xml
+COPY config-server/pom.xml config-server/pom.xml
+COPY gateway/pom.xml gateway/pom.xml
 
 RUN mvn -q -pl notification-service -am dependency:go-offline
 
