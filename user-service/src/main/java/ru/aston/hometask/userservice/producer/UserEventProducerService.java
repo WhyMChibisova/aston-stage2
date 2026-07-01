@@ -1,17 +1,23 @@
 package ru.aston.hometask.userservice.producer;
 
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.support.SendResult;
 import org.springframework.stereotype.Component;
 import ru.aston.hometask.userservice.dto.UserEventDto;
+
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Component
 public class UserEventProducerService {
     private static final String KAFKA_SEND_MSG_ERROR = "Failed to send Kafka event %s for %s: %s";
     private static final String KAFKA_SEND_MSG_SUCCESS = "Sent Kafka event %s for %s to partition %s";
+    private static final String KAFKA_FALLBACK_MSG = "Circuit breaker %s open";
+    private static final String KAFKA_CB_NAME = "kafkaProducerCb";
 
     @Autowired
     private KafkaTemplate<String, UserEventDto> kafkaTemplate;
@@ -19,17 +25,18 @@ public class UserEventProducerService {
     @Value("${app.kafka.topic.user-events}")
     private String topic;
 
-    public void sendUserCreated(String email) {
-        send(email, UserEventDto.EventType.CREATED);
+    public CompletableFuture<SendResult<String, UserEventDto>> sendUserCreated(String email) {
+        return send(email, UserEventDto.EventType.CREATED);
     }
 
-    public void sendUserDeleted(String email) {
-        send(email, UserEventDto.EventType.DELETED);
+    public CompletableFuture<SendResult<String, UserEventDto>> sendUserDeleted(String email) {
+        return send(email, UserEventDto.EventType.DELETED);
     }
 
-    private void send(String email, UserEventDto.EventType eventType) {
+    @CircuitBreaker(name = KAFKA_CB_NAME, fallbackMethod = "sendKafkaFallback")
+    public CompletableFuture<SendResult<String, UserEventDto>> send(String email, UserEventDto.EventType eventType) {
         UserEventDto userEventDto = new UserEventDto(email, eventType);
-        kafkaTemplate.send(topic, email, userEventDto)
+        CompletableFuture<SendResult<String, UserEventDto>> future = kafkaTemplate.send(topic, email, userEventDto)
                 .whenComplete((result, ex) -> {
                     if (ex != null) {
                         log.error(String.format(KAFKA_SEND_MSG_ERROR,
@@ -41,5 +48,12 @@ public class UserEventProducerService {
                         );
                     }
                 });
+        return future;
+    }
+
+    public CompletableFuture<SendResult<String, UserEventDto>> sendKafkaFallback(
+            String email, UserEventDto.EventType eventType, Throwable t) {
+        log.warn(String.format(KAFKA_FALLBACK_MSG, KAFKA_CB_NAME));
+        return CompletableFuture.failedFuture(t);
     }
 }

@@ -1,5 +1,6 @@
 package ru.aston.hometask.userservice.service.impl;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import ru.aston.hometask.userservice.dao.UserRepository;
@@ -19,10 +20,12 @@ import static ru.aston.hometask.userservice.mapper.UserMapper.toListUserResponse
 import static ru.aston.hometask.userservice.mapper.UserMapper.toUserEntity;
 import static ru.aston.hometask.userservice.mapper.UserMapper.toUserResponse;
 
+@Slf4j
 @Service
 public class UserServiceImpl implements UserService {
     private static final String USER_NOT_FOUND_MSG = "User not found: %s";
     private static final String EMAIL_DUPLICATE_MSG = "User email already exists: %s";
+    private static final String SEND_MSG_ERROR = "Kafka notification event was not delivered: %s";
 
     @Autowired
     private UserRepository userRepository;
@@ -36,7 +39,11 @@ public class UserServiceImpl implements UserService {
             throw new BadRequestException(String.format(EMAIL_DUPLICATE_MSG, request.email()));
         }
         User savedUser = userRepository.save(toUserEntity(request));
-        userEventProducer.sendUserCreated(savedUser.getEmail());
+        userEventProducer.sendUserCreated(savedUser.getEmail())
+                .exceptionally(ex -> {
+                    log.warn(String.format(SEND_MSG_ERROR, ex.getMessage()));
+                    return null;
+                });
         return toUserResponse(savedUser);
     }
 
@@ -73,6 +80,10 @@ public class UserServiceImpl implements UserService {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(String.format(USER_NOT_FOUND_MSG, id)));
         userRepository.deleteById(id);
-        userEventProducer.sendUserDeleted(user.getEmail());
+        userEventProducer.sendUserDeleted(user.getEmail())
+                .exceptionally(ex -> {
+                    log.warn(String.format(SEND_MSG_ERROR, ex.getMessage()));
+                    return null;
+                });
     }
 }
