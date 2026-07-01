@@ -4,7 +4,7 @@ services:
 
   postgres:
     image: postgres:15-alpine
-    container_name: user-service-db
+    container_name: postgres
     ports:
       - "5432:5432"
     environment:
@@ -18,6 +18,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - cloud-network
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
@@ -31,6 +33,8 @@ services:
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_log:/var/lib/zookeeper/log
+    networks:
+      - cloud-network
 
   kafka:
     image: confluentinc/cp-kafka:7.6.1
@@ -43,18 +47,23 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 30000
+      KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS: 30000
     volumes:
       - kafka_data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:29092 --list"]
+      test: ["CMD-SHELL", "nc -z localhost 29092 || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 15s
+    networks:
+      - cloud-network
 
   mailpit:
     image: axllent/mailpit:latest
@@ -65,6 +74,40 @@ services:
     environment:
       MP_SMTP_AUTH_ACCEPT_ANY: 1
       MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    networks:
+      - cloud-network
+
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8888/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - cloud-network
+
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8761/actuator/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - cloud-network
 
   user-service:
     build:
@@ -72,18 +115,26 @@ services:
       dockerfile: user-service/Dockerfile
     container_name: user-service
     ports:
-      - "8080:8080"
+      - "8082:8082"
     environment:
+      CONFIG_SERVER_URI: http://config-server:8888
+      EUREKA_URI: http://eureka-server:8761/eureka/
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/user_db
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       APP_KAFKA_TOPIC_USER_EVENTS: user-events
     depends_on:
+      config-server:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - cloud-network
 
   notification-service:
     build:
@@ -93,6 +144,8 @@ services:
     ports:
       - "8081:8081"
     environment:
+      CONFIG_SERVER_URI: http://config-server:8888
+      EUREKA_URI: http://eureka-server:8761/eureka/
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SPRING_KAFKA_CONSUMER_GROUP_ID: notification-group
       APP_KAFKA_TOPIC_USER_EVENTS: user-events
@@ -103,10 +156,42 @@ services:
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "false"
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "false"
     depends_on:
+      config-server:
+        condition: service_healthy
       kafka:
         condition: service_healthy
       mailpit:
         condition: service_started
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - cloud-network
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    environment:
+      CONFIG_SERVER_URI: http://config-server:8888
+      EUREKA_URI: http://eureka-server:8761/eureka/
+    depends_on:
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      user-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    networks:
+      - cloud-network
+
+networks:
+  cloud-network:
+    driver: bridge
 
 volumes:
   postgres_data:
